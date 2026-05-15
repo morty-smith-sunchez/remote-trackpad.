@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Remote Trackpad</string>
+
+    <!-- GitHub: замените, если репозиторий другой -->
+    <string name="github_repo" translatable="false">https://github.com/Nolifery/remote-trackpad</string>
+    <string name="github_pc_agent" translatable="false">https://github.com/Nolifery/remote-trackpad/tree/main/pc_agent</string>
+    <string name="github_start_server_bat" translatable="false">https://github.com/Nolifery/remote-trackpad/blob/main/pc_agent/start_server.bat</string>
+    <string name="github_install_autostart_bat" translatable="false">https://github.com/Nolifery/remote-trackpad/blob/main/pc_agent/install_autostart.bat</string>
+    <string name="github_releases" translatable="false">https://github.com/Nolifery/remote-trackpad/releases</string>
+</resources>

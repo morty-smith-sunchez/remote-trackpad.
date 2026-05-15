@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>Remote Trackpad</title>
+    <style>
+      html, body { height: 100%; margin: 0; background: #0b0f14; color: #e6edf3; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+      .wrap { height: 100%; display: flex; flex-direction: column; }
+      .top { padding: 10px 12px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #1f2a37; }
+      .badge { font-size: 12px; opacity: 0.85; }
+      .spacer { flex: 1; }
+      .btn { background: #1f6feb; border: 0; color: #fff; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
+      .btn.secondary { background: #111827; border: 1px solid #253041; }
+      .pad {
+        flex: 1;
+        margin: 12px;
+        border-radius: 16px;
+        border: 1px solid #253041;
+        background: radial-gradient(1200px 600px at 50% 0%, #0f172a, #0b0f14);
+        touch-action: none;
+        position: relative;
+        overflow: hidden;
+      }
+      .hint {
+        position: absolute; left: 12px; right: 12px; bottom: 12px;
+        font-size: 12px; opacity: 0.7; line-height: 1.4;
+      }
+      .controls { padding: 10px 12px; display: flex; gap: 10px; }
+      .controls .btn { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="top">
+        <div><b>Remote Trackpad</b></div>
+        <div class="badge" id="status">connecting…</div>
+        <div class="spacer"></div>
+        <button class="btn secondary" id="hold">hold: off</button>
+      </div>
+
+      <div class="pad" id="pad">
+        <div class="hint">
+          1 палец: движение курсора<br />
+          тап: ЛКМ · тап 2 пальцами: ПКМ<br />
+          2 пальца: скролл<br />
+          hold: зажим ЛКМ (drag)
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="left">ЛКМ</button>
+        <button class="btn" id="right">ПКМ</button>
+      </div>
+    </div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const pad = document.getElementById("pad");
+      const btnLeft = document.getElementById("left");
+      const btnRight = document.getElementById("right");
+      const btnHold = document.getElementById("hold");
+
+      let ws = null;
+      let hold = false;
+
+      function connect() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}/ws`);
+        ws.onopen = () => statusEl.textContent = "online";
+        ws.onclose = () => { statusEl.textContent = "offline"; setTimeout(connect, 800); };
+        ws.onerror = () => { statusEl.textContent = "offline"; };
+      }
+
+      function send(obj) {
+        if (!ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify(obj));
+      }
+
+      connect();
+
+      btnLeft.addEventListener("click", () => send({ type: "click", button: "left" }));
+      btnRight.addEventListener("click", () => send({ type: "click", button: "right" }));
+
+      btnHold.addEventListener("click", () => {
+        hold = !hold;
+        btnHold.textContent = hold ? "hold: on" : "hold: off";
+        if (hold) send({ type: "down", button: "left" });
+        else send({ type: "up", button: "left" });
+      });
+
+      let pointers = new Map();
+      let lastMove = null;
+      let lastTwo = null;
+      let tapTimer = null;
+      let moved = false;
+
+      function dist(a, b) {
+        const dx = a.x - b.x, dy = a.y - b.y;
+        return Math.sqrt(dx*dx + dy*dy);
+      }
+
+      pad.addEventListener("pointerdown", (e) => {
+        pad.setPointerCapture(e.pointerId);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        moved = false;
+        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+      });
+
+      pad.addEventListener("pointermove", (e) => {
+        if (!pointers.has(e.pointerId)) return;
+        const prev = pointers.get(e.pointerId);
+        const cur = { x: e.clientX, y: e.clientY };
+        pointers.set(e.pointerId, cur);
+
+        if (pointers.size === 1) {
+          const dx = cur.x - prev.x;
+          const dy = cur.y - prev.y;
+          if (Math.abs(dx) + Math.abs(dy) > 1) moved = true;
+          send({ type: "move", dx, dy });
+          lastMove = cur;
+          return;
+        }
+
+        if (pointers.size === 2) {
+          const pts = Array.from(pointers.values());
+          const mid = { x: (pts[0].x + pts[1].x)/2, y: (pts[0].y + pts[1].y)/2 };
+          const d = dist(pts[0], pts[1]);
+          if (lastTwo) {
+            const dy = mid.y - lastTwo.mid.y;
+            if (Math.abs(dy) > 0.5) moved = true;
+            send({ type: "scroll", dy });
+          }
+          lastTwo = { mid, d };
+          return;
+        }
+      });
+
+      pad.addEventListener("pointerup", (e) => {
+        pointers.delete(e.pointerId);
+        if (pointers.size < 2) lastTwo = null;
+
+        // tap/click detection only if not moved
+        if (!moved) {
+          // decide right click if there were 2 pointers active recently
+          // simple heuristic: if second finger lifted within a short window
+          const right = (e.pointerType === "touch" && e.isPrimary === false);
+          if (right) {
+            send({ type: "click", button: "right" });
+          } else {
+            // delay a bit to allow two-finger tap to be recognized
+            tapTimer = setTimeout(() => {
+              send({ type: "click", button: "left" });
+              tapTimer = null;
+            }, 140);
+          }
+        }
+        moved = false;
+      });
+
+      pad.addEventListener("pointercancel", (e) => {
+        pointers.delete(e.pointerId);
+        if (pointers.size < 2) lastTwo = null;
+      });
+    </script>
+  </body>
+</html>
+
