@@ -26,8 +26,44 @@ git push -u origin main
 
 Файл: `android_app/app/src/main/res/values/strings.xml` — строки `github_*`.
 
-## 4. APK в Releases (по желанию)
+## 4. Как залить APK на GitHub (Releases)
 
-1. GitHub → репозиторий → **Releases** → **Create a new release**  
-2. Прикрепите `android_app/app/build/outputs/apk/debug/app-debug.apk`  
-3. В приложении кнопка «Скачать APK» откроет страницу релизов
+APK **не хранят в коде** — его прикрепляют к **Release** (отдельная «версия» для скачивания).
+
+### Шаг 1 — собрать APK на ПК
+
+```powershell
+cd "c:\Users\Дима\Documents\my projects\remote_trackpad\android_app"
+.\gradlew.bat assembleDebug
+```
+
+Готовый файл:
+
+`android_app\app\build\outputs\apk\debug\app-debug.apk`
+
+(для публикации в магазин позже нужен **release**-сборка с подписью; для себя и друзей достаточно debug).
+
+### Шаг 2 — создать Release на сайте GitHub
+
+1. Откройте: https://github.com/morty-smith-sunchez/remote-trackpad./releases  
+2. **Create a new release** (или **Draft a new release**).  
+3. **Choose a tag:** введите, например, `v0.1.0` → **Create new tag: v0.1.0**.  
+4. **Release title:** `v0.1.0` (или «Первая версия»).  
+5. Описание — по желанию (что умеет приложение).  
+6. В блоке **Attach binaries** перетащите файл **`app-debug.apk`**  
+   (можно переименовать в `RemoteTrackpad-v0.1.0.apk` — так понятнее).  
+7. **Publish release**.
+
+### Шаг 3 — ссылка для скачивания
+
+После публикации на странице релиза появится ссылка на APK.  
+В приложении кнопка **«Скачать APK (релизы)»** откроет список релизов.
+
+### Через командную строку (если установлен GitHub CLI)
+
+```powershell
+winget install GitHub.cli
+gh auth login
+cd "c:\Users\Дима\Documents\my projects\remote_trackpad"
+gh release create v0.1.0 "android_app/app/build/outputs/apk/debug/app-debug.apk" --title "v0.1.0" --notes "Первая сборка Remote Trackpad"
+```
