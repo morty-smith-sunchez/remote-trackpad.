@@ -20,7 +20,7 @@ git remote set-url origin https://github.com/ВАШ_ЛОГИН/remote-trackpad.g
 git push -u origin main
 ```
 
-Замените `ВАШ_ЛОГИН` на свой GitHub (сейчас в приложении указан **Nolifery**).
+В приложении указан логин **morty-smith-sunchez**.
 
 ## 3. Обновите ссылки в приложении (если логин другой)
 

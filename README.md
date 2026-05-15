@@ -2,7 +2,7 @@
 
 Телефон как **удалённый трекпад и клавиатура** для Windows и **пульт** для Android TV.
 
-[![GitHub](https://img.shields.io/badge/GitHub-Nolifery%2Fremote--trackpad-1F6FEB)](https://github.com/Nolifery/remote-trackpad)
+[![GitHub](https://img.shields.io/badge/GitHub-morty--smith--sunchez%2Fremote--trackpad-1F6FEB)](https://github.com/morty-smith-sunchez/remote-trackpad)
 
 ## Режимы
 
@@ -66,7 +66,7 @@ git init
 git add .
 git commit -m "Initial release: Remote Trackpad"
 git branch -M main
-git remote add origin https://github.com/Nolifery/remote-trackpad.git
+git remote add origin https://github.com/morty-smith-sunchez/remote-trackpad.git
 git push -u origin main
 ```
 
