@@ -2,7 +2,7 @@
 
 Телефон как **удалённый трекпад и клавиатура** для Windows и **пульт** для Android TV.
 
-[![GitHub](https://img.shields.io/badge/GitHub-morty--smith--sunchez%2Fremote--trackpad-1F6FEB)](https://github.com/morty-smith-sunchez/remote-trackpad)
+[![GitHub](https://img.shields.io/badge/GitHub-morty--smith--sunchez%2Fremote--trackpad-1F6FEB)](https://github.com/morty-smith-sunchez/remote-trackpad.)
 
 ## Режимы
 
