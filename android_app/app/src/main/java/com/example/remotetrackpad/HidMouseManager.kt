@@ -134,10 +134,10 @@ class HidMouseManager(
             if (registeredNow) {
                 phase = Phase.READY
                 emit(Phase.READY, "Готово — нажмите «Подключить»")
-                val target = pendingHost ?: resolveSavedDevice()
-                if (target != null) {
-                    pendingHost = null
-                    if (autoConnectEnabled) connectTo(target)
+                val target = pendingHost
+                pendingHost = null
+                if (target != null && autoConnectEnabled) {
+                    connectTo(target)
                 }
             } else if (phase != Phase.OFF) {
                 phase = Phase.FAILED
@@ -153,7 +153,7 @@ class HidMouseManager(
                     host = device
                     phase = Phase.CONNECTED
                     connectAttempts = 0
-                    ConnectionPrefs.saveBtDevice(device.address)
+                    rememberBtDevice(device)
                     mainHandler.removeCallbacks(connectTimeout)
                     mainHandler.removeCallbacks(linkWatchdog)
                     mainHandler.post(linkWatchdog)
@@ -262,12 +262,20 @@ class HidMouseManager(
 
     fun isConnected(): Boolean = phase == Phase.CONNECTED
 
-    fun bondedDevices(): List<BluetoothDevice> {
+    fun isConnectedTo(device: BluetoothDevice): Boolean {
+        val h = hid ?: return false
+        return isDeviceConnected(h, device)
+    }
+
+    fun bondedDevices(preferComputer: Boolean = true): List<BluetoothDevice> {
         return try {
             val list = adapter?.bondedDevices?.toList().orEmpty()
             list.sortedWith(
-                compareByDescending<BluetoothDevice> { isLikelyComputer(it) }
-                    .thenBy { deviceSortKey(it) }
+                if (preferComputer) {
+                    compareByDescending<BluetoothDevice> { isLikelyComputer(it) }
+                } else {
+                    compareByDescending<BluetoothDevice> { isLikelyTv(it) }
+                }.thenBy { deviceSortKey(it) },
             )
         } catch (_: SecurityException) {
             emptyList()
@@ -282,10 +290,29 @@ class HidMouseManager(
         }
     }
 
-    fun guessPcDevice(): BluetoothDevice? {
-        resolveSavedDevice()?.let { return it }
-        return bondedDevices().firstOrNull { isLikelyComputer(it) }
-            ?: bondedDevices().firstOrNull()
+    fun guessPcDevice(): BluetoothDevice? = guessHost(preferComputer = true)
+
+    fun guessTvDevice(): BluetoothDevice? = guessHost(preferComputer = false)
+
+    fun guessHost(preferComputer: Boolean): BluetoothDevice? {
+        val savedAddr = if (preferComputer) {
+            ConnectionPrefs.peekBtAddressForPc()
+        } else {
+            ConnectionPrefs.peekBtAddressForTv()
+        }
+        if (savedAddr != null) {
+            bondedDevices(preferComputer)
+                .firstOrNull { it.address == savedAddr }
+                ?.let { return it }
+        }
+        val bonded = bondedDevices(preferComputer)
+        return if (preferComputer) {
+            bonded.firstOrNull { isLikelyComputer(it) } ?: bonded.firstOrNull()
+        } else {
+            bonded.firstOrNull { isLikelyTv(it) }
+                ?: bonded.firstOrNull { !isLikelyComputer(it) }
+                ?: bonded.firstOrNull()
+        }
     }
 
     fun connect(device: BluetoothDevice): Boolean {
@@ -319,11 +346,6 @@ class HidMouseManager(
             return false
         }
         return connect(pc)
-    }
-
-    private fun resolveSavedDevice(): BluetoothDevice? {
-        val addr = ConnectionPrefs.peekBtAddress() ?: return null
-        return bondedDevices().firstOrNull { it.address == addr }
     }
 
     private fun connectTo(device: BluetoothDevice): Boolean {
@@ -433,7 +455,7 @@ class HidMouseManager(
         } else {
             mainHandler.postDelayed({
                 if (phase == Phase.REGISTERING && !registered) {
-                    val dev = pendingHost ?: guessPcDevice()
+                    val dev = pendingHost
                     if (dev != null) softResetAndRetry(dev)
                     else failConnect("Регистрация HID не завершилась")
                 }
@@ -462,6 +484,35 @@ class HidMouseManager(
                 n.contains("surface") || n.contains("thinkpad")
         } catch (_: SecurityException) {
             false
+        }
+    }
+
+    private fun isLikelyTv(device: BluetoothDevice): Boolean {
+        return try {
+            when (device.bluetoothClass?.majorDeviceClass) {
+                BluetoothClass.Device.Major.AUDIO_VIDEO,
+                BluetoothClass.Device.Major.TOY,
+                -> return true
+            }
+            val n = device.name?.lowercase().orEmpty()
+            n.contains("tv") || n.contains("телевиз") || n.contains("bravia") ||
+                n.contains("android tv") || n.contains("google tv") || n.contains("mi box") ||
+                n.contains("philips") || n.contains("samsung") && n.contains("tv") ||
+                n.contains("lg") && (n.contains("tv") || n.contains("oled")) ||
+                n.contains("tcl") || n.contains("hisense") || n.contains("xiaomi") && n.contains("tv")
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
+    private fun rememberBtDevice(device: BluetoothDevice) {
+        try {
+            if (isLikelyComputer(device)) {
+                ConnectionPrefs.saveBtDeviceForPc(device.address)
+            } else {
+                ConnectionPrefs.saveBtDeviceForTv(device.address)
+            }
+        } catch (_: SecurityException) {
         }
     }
 

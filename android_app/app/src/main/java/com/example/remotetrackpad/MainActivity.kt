@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         if (!useUsbMode && hasBtPermission(result)) {
-            refreshBtSelection()
+            restoreBtSelectionIfNeeded()
             hid.start()
         } else if (!useUsbMode) {
             statusText.text = "Нужно разрешение Bluetooth"
@@ -123,7 +123,9 @@ class MainActivity : AppCompatActivity() {
         useUsbMode = modeToggle.checkedButtonId == R.id.modeUsbPc
         applyModeUi()
 
-        selectPcBtn.setOnClickListener { showBluetoothDevicePicker(hid.bondedDevices(), connectAfterPick = false) }
+        selectPcBtn.setOnClickListener {
+            showBluetoothDevicePicker(hid.bondedDevices(preferComputerBtHost()), connectAfterPick = false)
+        }
         btHelpBtn.setOnClickListener { showBluetoothHelp() }
         findPcBtn.setOnClickListener { findPcOnly() }
         pcServerHelpBtn.setOnClickListener { showPcServerLinksDialog() }
@@ -163,6 +165,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun onHidState(state: HidMouseManager.HidState) {
         if (useUsbMode) return
+        if (state.phase == HidMouseManager.Phase.CONNECTED && state.isConnected) {
+            syncSelectedDeviceFromConnection()
+        }
         val extra = state.deviceLabel?.let { " ($it)" }.orEmpty()
         statusText.text = state.message + if (state.phase == HidMouseManager.Phase.CONNECTED) extra else ""
         connected = state.isConnected
@@ -238,7 +243,7 @@ class MainActivity : AppCompatActivity() {
                 btToolsRow.isVisible = true
                 selectPcBtn.text = "Выбрать ТВ"
                 if (hasBtPermission()) {
-                    refreshBtSelection()
+                    restoreBtSelectionForCurrentMode()
                 } else {
                     selectedBtDevice = null
                 }
@@ -259,7 +264,7 @@ class MainActivity : AppCompatActivity() {
                 keyboardBtn.isVisible = true
                 selectPcBtn.text = "Выбрать ПК"
                 if (hasBtPermission()) {
-                    refreshBtSelection()
+                    restoreBtSelectionForCurrentMode()
                 } else {
                     selectedBtDevice = null
                 }
@@ -289,10 +294,49 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateSelectedPcLabel() {
         val d = selectedBtDevice
-        selectPcBtn.text = when {
-            d == null -> "Выбрать ПК"
-            else -> deviceLabel(d)
+        val fallback = if (useTvMode) "Выбрать ТВ" else "Выбрать ПК"
+        selectPcBtn.text = d?.let { deviceLabel(it) } ?: fallback
+    }
+
+    private fun preferComputerBtHost(): Boolean = !useTvMode
+
+    private fun restoreBtSelectionForCurrentMode() {
+        if (!::hid.isInitialized) return
+        selectedBtDevice = hid.guessHost(preferComputerBtHost())
+        updateSelectedPcLabel()
+    }
+
+    private fun restoreBtSelectionIfNeeded() {
+        if (selectedBtDevice == null) {
+            restoreBtSelectionForCurrentMode()
+        } else {
+            updateSelectedPcLabel()
         }
+    }
+
+    private fun rememberPickedDevice(device: BluetoothDevice) {
+        selectedBtDevice = device
+        try {
+            if (preferComputerBtHost()) {
+                ConnectionPrefs.saveBtDeviceForPc(device.address)
+            } else {
+                ConnectionPrefs.saveBtDeviceForTv(device.address)
+            }
+        } catch (_: SecurityException) {
+        }
+        updateSelectedPcLabel()
+    }
+
+    private fun syncSelectedDeviceFromConnection() {
+        val bonded = hid.bondedDevices(preferComputerBtHost())
+        val connected = bonded.firstOrNull { d ->
+            try {
+                hid.isConnectedTo(d)
+            } catch (_: SecurityException) {
+                false
+            }
+        } ?: return
+        rememberPickedDevice(connected)
     }
 
     private fun deviceLabel(device: BluetoothDevice): String {
@@ -301,12 +345,6 @@ class MainActivity : AppCompatActivity() {
         } catch (_: SecurityException) {
             device.address
         }
-    }
-
-    private fun refreshBtSelection() {
-        if (!::hid.isInitialized) return
-        selectedBtDevice = hid.guessPcDevice()
-        updateSelectedPcLabel()
     }
 
     private fun hasBtPermission(
@@ -333,8 +371,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun connectBluetooth() {
-        ensureBtPermissionsAndStart()
-        val device = selectedBtDevice ?: hid.guessPcDevice()
+        ensureBtPermissionsAndStart(refreshSelection = false)
+        val device = selectedBtDevice ?: hid.guessHost(preferComputerBtHost())
         if (device == null) {
             val bonded = hid.bondedDevices()
             if (bonded.isEmpty()) {
@@ -361,25 +399,29 @@ class MainActivity : AppCompatActivity() {
                 .show()
             return
         }
+        val preferPc = preferComputerBtHost()
+        val guessed = selectedBtDevice ?: hid.guessHost(preferPc)
         val labels = devices.map { d ->
-            val tag = if (hid.guessPcDevice()?.address == d.address) " ★" else ""
+            val tag = if (guessed?.address == d.address) " ★" else ""
             val kind = try {
-                if (d.bluetoothClass?.majorDeviceClass ==
-                    android.bluetooth.BluetoothClass.Device.Major.COMPUTER
-                ) " [ПК]" else ""
+                when {
+                    preferPc && d.bluetoothClass?.majorDeviceClass ==
+                        android.bluetooth.BluetoothClass.Device.Major.COMPUTER -> " [ПК]"
+                    !preferPc -> " [ТВ?]"
+                    else -> ""
+                }
             } catch (_: SecurityException) {
                 ""
             }
             "${deviceLabel(d).ifBlank { "Без имени" }}$kind$tag\n${d.address}"
         }.toTypedArray()
-        val guessed = selectedBtDevice ?: hid.guessPcDevice()
         var selected = devices.indexOfFirst { it.address == guessed?.address }.coerceAtLeast(0)
+        val title = if (preferPc) "Ноутбук для мыши" else "Телевизор"
         AlertDialog.Builder(this)
-            .setTitle("Ноутбук для мыши")
+            .setTitle(title)
             .setSingleChoiceItems(labels, selected) { _, which -> selected = which }
             .setPositiveButton(if (connectAfterPick) "Подключить" else "Выбрать") { _, _ ->
-                selectedBtDevice = devices[selected]
-                updateSelectedPcLabel()
+                rememberPickedDevice(devices[selected])
                 if (connectAfterPick) hid.connect(devices[selected])
             }
             .setNeutralButton("Чувствительность") { _, _ -> showSensitivityDialog() }
@@ -519,10 +561,10 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun ensureBtPermissionsAndStart() {
+    private fun ensureBtPermissionsAndStart(refreshSelection: Boolean = true) {
         if (useUsbMode) return
         if (Build.VERSION.SDK_INT < 31) {
-            refreshBtSelection()
+            if (refreshSelection) restoreBtSelectionIfNeeded()
             hid.start()
             return
         }
@@ -536,7 +578,7 @@ class MainActivity : AppCompatActivity() {
         if (missing) {
             permissionLauncher.launch(needed)
         } else {
-            refreshBtSelection()
+            if (refreshSelection) restoreBtSelectionIfNeeded()
             hid.start()
         }
     }

@@ -7,6 +7,8 @@ object ConnectionPrefs {
     private const val KEY_HOST = "last_host"
     private const val KEY_PORT = "last_port"
     private const val KEY_BT_ADDRESS = "last_bt_address"
+    private const val KEY_BT_ADDRESS_PC = "last_bt_address_pc"
+    private const val KEY_BT_ADDRESS_TV = "last_bt_address_tv"
     private const val KEY_BT_AUTO_CONNECT = "bt_auto_connect"
     private const val KEY_BT_SENSITIVITY = "bt_sensitivity"
 
@@ -14,6 +16,17 @@ object ConnectionPrefs {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        migrateBtAddresses()
+    }
+
+    private fun migrateBtAddresses() {
+        val ctx = appContext ?: return
+        val p = prefs(ctx)
+        if (p.contains(KEY_BT_ADDRESS_PC) || p.contains(KEY_BT_ADDRESS_TV)) return
+        val legacy = p.getString(KEY_BT_ADDRESS, null)?.takeIf { it.isNotBlank() } ?: return
+        p.edit()
+            .putString(KEY_BT_ADDRESS_PC, legacy)
+            .apply()
     }
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -34,13 +47,29 @@ object ConnectionPrefs {
     }
 
     fun saveBtDevice(address: String) {
-        val ctx = appContext ?: return
-        prefs(ctx).edit().putString(KEY_BT_ADDRESS, address).apply()
+        saveBtDeviceForPc(address)
     }
 
-    fun peekBtAddress(): String? {
+    fun peekBtAddress(): String? = peekBtAddressForPc()
+
+    fun saveBtDeviceForPc(address: String) {
+        val ctx = appContext ?: return
+        prefs(ctx).edit().putString(KEY_BT_ADDRESS_PC, address).apply()
+    }
+
+    fun saveBtDeviceForTv(address: String) {
+        val ctx = appContext ?: return
+        prefs(ctx).edit().putString(KEY_BT_ADDRESS_TV, address).apply()
+    }
+
+    fun peekBtAddressForPc(): String? {
         val ctx = appContext ?: return null
-        return prefs(ctx).getString(KEY_BT_ADDRESS, null)?.takeIf { it.isNotBlank() }
+        return prefs(ctx).getString(KEY_BT_ADDRESS_PC, null)?.takeIf { it.isNotBlank() }
+    }
+
+    fun peekBtAddressForTv(): String? {
+        val ctx = appContext ?: return null
+        return prefs(ctx).getString(KEY_BT_ADDRESS_TV, null)?.takeIf { it.isNotBlank() }
     }
 
     fun isBtAutoConnect(): Boolean {

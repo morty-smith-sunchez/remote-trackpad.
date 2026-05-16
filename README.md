@@ -66,7 +66,7 @@ git init
 git add .
 git commit -m "Initial release: Remote Trackpad"
 git branch -M main
-git remote add origin https://github.com/morty-smith-sunchez/remote-trackpad.git
+git remote add origin https://github.com/morty-smith-sunchez/remote-trackpad..git
 git push -u origin main
 ```
 
